@@ -165,6 +165,31 @@ RandIt filterViaCandidatesByStretchHeuristic(RandIt first, RandIt last, EdgeWeig
     return std::remove_if(first, last, over_weight_limit);
 }
 
+// Filters candidates by never be on the shortest path. Mutates range in-place.
+// Returns an iterator to the filtered range's new end.
+template <typename RandIt>
+RandIt filterViaCandidatesByViaNotOnShortestPath(const WeightedViaNodePackedPath &path,
+                                                 RandIt first,
+                                                 RandIt last)
+{
+    util::static_assert_iter_category<RandIt, std::random_access_iterator_tag>();
+    util::static_assert_iter_value<RandIt, WeightedViaNode>();
+
+    const auto via_on_shortest_path = [&](const auto via) {
+        // Todo: potentially build set / flatmap + binary search and check in constant time
+
+        const auto it = std::find_if(begin(path.path), end(path.path), [via](const auto edge) {
+            const auto from = std::get<0>(edge);
+            const auto to = std::get<1>(edge);
+            return via.node == from || via.node == to;
+        });
+
+        return it != end(path.path);
+    };
+
+    return std::remove_if(first, last, via_on_shortest_path);
+}
+
 // The packed paths' sharing in [0, 1] for no sharing and equality, respectively.
 inline double normalizedPackedPathSharingHeuristic(const Partition &partition,
                                                    const WeightedViaNodePackedPath &lhs,
@@ -785,9 +810,12 @@ InternalManyRoutesResult alternativePathSearch(SearchEngineData<Algorithm> &sear
     WeightedViaNode shortest_path_weighted_via{shortest_path_via, shortest_path_weight};
     weighted_packed_paths.push_back(extract_packed_path_from_heaps(shortest_path_weighted_via));
 
+    const auto last_filtered =
+        filterViaCandidatesByViaNotOnShortestPath(weighted_packed_paths[0], first + 1, last);
+
     // Store all alternative packed paths (if there are any).
     auto into = std::back_inserter(weighted_packed_paths);
-    std::transform(first, last, into, extract_packed_path_from_heaps);
+    std::transform(begin(candidate_vias) + 1, last_filtered, into, extract_packed_path_from_heaps);
 
     // Filter packed paths with heuristics
 
